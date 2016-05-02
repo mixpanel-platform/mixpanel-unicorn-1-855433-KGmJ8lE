@@ -71,12 +71,26 @@
                 .datum(graticule)
                 .attr("class", "graticule")
                 .attr("d", path);
-
-            d3.json('mockelasticdata.json', function(error, mockdata) {
+                
+            var d3-json = {"aggregations": {
+                  "world_map": {
+                    "doc_count_error_upper_bound": 0,
+                    "sum_other_doc_count": 0,
+                    "buckets": []
+                  }
+            };
+            
+            var script = $('#cq').html();
+            script = $.trim(script);
+            
+            MP.api.custom_query(script, queryParams).done(function(results) {
+              cqResult = results[0];
+              d3.json('mockelasticdata.json', function(error, mockdata) {
                 if (error) return console.error(error);
                 console.log('mockdata',mockdata);
                 mapdata = mockdata;
                 draw(mockdata)
+              });
             });
 
             function draw(data) {
@@ -175,6 +189,16 @@
                 return palette[approxIdx];
             }
         </script>
+        
+        
+        <!-- Custom Query to get user country code goes here-->
+        <script type="text/cq" id="cq">
+      var EVENT_LIST = params.event_list;
+      var PATH_LENGTH =  params.path_length || 3;
+      </script>
+      
+        
+        
         
     </body>
 </html>
