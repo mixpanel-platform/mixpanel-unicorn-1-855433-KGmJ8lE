@@ -109,6 +109,7 @@ function main() {
             MP.api.jql(script).done(function(results) {
               cqResult = results[0];
               d3json.aggregations.world_map.buckets = cqResult;
+              console.log(d3json);
               draw(d3json);
             
             });
