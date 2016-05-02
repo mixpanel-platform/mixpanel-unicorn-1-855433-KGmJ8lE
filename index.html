@@ -86,7 +86,7 @@
             
             var script = $('#cq').html();
             script = $.trim(script);
-            console.log(script);
+            console.log("test" + script);
             MP.api.jql(script).done(function(results) {
               cqResult = results[0];
               d3json.aggregations.world_map.buckets = cqResult;
