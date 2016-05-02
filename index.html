@@ -72,13 +72,15 @@
                 .attr("class", "graticule")
                 .attr("d", path);
                 
-            var d3json = {"aggregations": {
-                  "world_map": {
-                    "doc_count_error_upper_bound": 0,
-                    "sum_other_doc_count": 0,
-                    "buckets": []
-                  }
-            };
+            var d3json = {"aggregations": 
+              {
+                "world_map": {
+                  "doc_count_error_upper_bound": 0,
+                  "sum_other_doc_count": 0,
+                  "buckets": []
+                }
+              }
+            }
             
             var script = $('#cq').html();
             script = $.trim(script);
