@@ -1,242 +1,556 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
-  <head>
-    <meta charset="utf-8">
-    <link rel="stylesheet" type="text/css" href="https://cdn.mxpnl.com/libs/mixpanel-platform/css/reset.css">
-    <link rel="stylesheet" type="text/css" href="https://cdn.mxpnl.com/libs/mixpanel-platform/build/mixpanel-platform.v0.latest.min.css">
-    <script src="https://cdn.mxpnl.com/libs/mixpanel-platform/build/mixpanel-platform.v0.latest.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.5/d3.min.js"></script> <!-- Add this line -->
-    <style>
-      svg {
-        background: #fff;
-      }
-
-      .node {
-        stroke-width: 0;
-        fill-opacity: 0.4;
-      }
-
-      .node text {
-        text-anchor: middle;
-        alignment-baseline: middle;
-        fill-opacity: 1;
-      }
-
-      .link {
-        stroke: #999;
-        stroke-opacity: .6;
-        stroke-linecap: round;
-      }
-    </style>
-  </head>
-  <body class="mixpanel-platform-body">
-    <div class="mixpanel-platform-section">
-      <div id="eventSelect"></div>
-    </div>
-    <script>
-      var eventsArray = ['Signup'];
-      var nodesMap = {}, nodesArray = []; // stores our node data
-      var linksMap = {}, linksArray = []; // stores our link data
-
-      var eventSelect = $('#eventSelect').MPEventSelect();
-
-      var runQuery = function(events) {
-        console.log('Making a funnel query with events:', events);
-
-        // Call the funnel endpoint passing events
-        // If events is ['A', 'B', 'C'], this is equivalent to calling
-        // MP.api.funnel('A', 'B', 'C') ...
-        MP.api.funnel.apply(MP.api, events).done(function(funnelData) {
-
-          // Sum step counts
-          var steps = _.map(funnelData, function(step) {
-            return {
-              event: _.first(_.values(step)).event,
-              count: _.sum(_.pluck(step, 'count'))
-            };
-          });
-
-          // Add nodes
-          _.each(steps, function(step, i) {
-            step = _.clone(step); // copy step so that it isn't modified
-            var event = step.event;
-            var count = step.count;
-
-            if (_.has(nodesMap, event)) { // if the node already exists check its count
-              // Each node's count should be the max value it has in any funnel
-              nodesMap[event].count = _.max([nodesMap[event].count, count]);
-            } else if (count) { // otherwise create node if it has a non-zero count
-              // add the new node to our data structures
-              nodesMap[event] = step;
-              nodesArray.push(step);
+    <head>
+        <meta charset="utf-8">
+        <style>
+            /* CSS goes here. */
+            .subunit {
+                fill: none;
+                stroke: #FFF;
+                stroke-width: 1px;
             }
-          });
-
-          // Add links
-          _.each(steps, function(step, i) {
-            var nextStep = steps[i + 1];
-
-            // Only create a link if nextStep exists and has a non-zero count
-            if (nextStep && nextStep.count && _.has(nodesMap, nextStep.event)) {
-
-              // Only create a link if one doesn't exist for these two events yet
-              if (!_.has(linksMap, step.event + '-' + nextStep.event)) {
-                var link = {
-                  // link target and source values are set as corresponding nodes
-                  source: nodesMap[step.event],
-                  target: nodesMap[nextStep.event],
-                  count: nextStep.count // link count is the target node count
-                };
-                // add the new link to our data structures
-                linksMap[step.event + '-' + nextStep.event] = link;
-                linksArray.push(link);
-              }
+            text.subunit-label {
+                font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+                font-size: 14px;
+                font-weight: 300;
+                text-anchor: middle;
+                fill: #000;
             }
-          });
+            .subunit-label {
+                display: none;
+            }
+            .graticule {
+                fill: none;
+                stroke: #aaa;
+                stroke-opacity: .5;
+                stroke-width: .5px;
+            }
+        </style>
+    </head>
+    <body>
+        <script src="//d3js.org/d3.v3.min.js" charset="utf-8"></script>
+        <script src="//d3js.org/topojson.v1.min.js"></script>
+        <script>
+            /* JavaScript goes here. */
+            // globals used in graph
+            var mapdata = {};
+            var palette = ['#009933','#669900','#99cc00','#cccc00','#c7dc09','#edf933','#ffcc00', '#ff9933', '#ff6600','#ff5050'];
+            var width = 960, height = 960;
+            var minDocCount = 0, quantiles = {};
+            // projection definitions
+            var projection = d3.geo.mercator()
+                .scale((width + 1) / 2 / Math.PI)
+                .translate([width/2, height/2])
+                .precision(.1);
+            var path = d3.geo.path().projection(projection);
+            var graticule = d3.geo.graticule();
+            // SVG related definitions
+            var svg = d3.select('body').append('svg')
+                        .attr({'width': width, 'height': height})
+                        .append('g');
+            var filter = svg.append('defs')
+                .append('filter')
+                .attr({'x':0, 'y':0, 'width':1, 'height':1, 'id':'gray-background'});
+            filter.append('feFlood')
+                .attr('flood-color', '#f2f2f2')
+                .attr('result', 'COLOR');
+            filter.append('feMorphology')
+                .attr('operator', 'dilate')
+                .attr('radius', '.9')
+                .attr('in', 'SourceAlpha')
+                .attr('result', 'MORPHED');
+            filter.append('feComposite')
+                .attr('in', 'SourceGraphic')
+                .attr('in2', 'MORPHED')
+                .attr('result', 'COMP1');
+            filter.append('feComposite')
+                .attr('in', 'COMP1')
+                .attr('in2', 'COLOR');
 
-          renderGraph();
-        });
-      };
+            svg.append("path")
+                .datum(graticule)
+                .attr("class", "graticule")
+                .attr("d", path);
 
-      // Do an initial query to render the first event node
-      runQuery(eventsArray);
-
-      // When the event select changes, re-query
-      eventSelect.on('change', function() {
-        var event = eventSelect.MPEventSelect('value');
-
-        // Only add events that we aren't already querying on
-        if (!_.contains(eventsArray, event)) {
-          eventsArray.push(event); // add the new event to our events array
-
-          var funnels = getFunnels(eventsArray);
-          _.each(funnels, function(funnel) { // loop over funnels
-            runQuery(funnel);
-          });
-        }
-      });
-
-      var width = 960;  // SVG element width
-      var height = 640; // SVG element height
-
-      var svg = d3.select('body').append('svg') // the SVG element
-        .attr('width', width)
-        .attr('height', height);
-
-      var linkElements = svg.selectAll('.link'); // the link elements
-      var nodeElements = svg.selectAll('.node'); // the node elements
-
-      var colorScale = d3.scale.category20(); // used with colorIndex to select a different color for each node
-      var countScale = d3.scale.linear().range([0, 40]);   // maps our link widths to values from 0px to 40px
-      var strengthScale = d3.scale.linear().range([0, 1]); // maps our link strengths to values from 0 to 1
-
-      var colorIndex = 0; // incremented to select a different color for each node
-      var nodeIndex = 0;  // incremented to be display a funnel step number in node labels
-
-      // The D3 Force Layout that calculates our node and link positions
-      // See https://github.com/mbostock/d3/wiki/Force-Layout for detailed documentation
-      var forceLayout = d3.layout.force()
-        .nodes(nodesArray) // link our node data with the layout
-        .links(linksArray) // link our link data with the layout
-        .size([width, height])
-        .charge(-120) // node repulsion/attraction - should always be negative
-        .linkDistance(300) // the distance nodes are placed from each other
-        .linkStrength(function(d) { return strengthScale(d.count); }) // set link strength based on count
-        .on('tick', function() { // a function that runs continuously to animate node and link positions
-          linkElements // update link positions
-            .attr('x1', function(d) { return d.source.x; })
-            .attr('y1', function(d) { return d.source.y; })
-            .attr('x2', function(d) { return d.target.x; })
-            .attr('y2', function(d) { return d.target.y; });
-
-          nodeElements // update node positions
-            .attr('transform', function(d) { return 'translate(' + d.x + ',' + d.y + ')'; });
-        });
-
-      function renderGraph() {
-        var maxCount = _.max(_.pluck(nodesArray, 'count'));
-
-        // update scale domains for the new data
-        countScale.domain([0, maxCount]);
-        strengthScale.domain([0, maxCount]);
-
-        // our data has changed - rebind layout data to SVG elements
-        nodeElements = nodeElements.data(forceLayout.nodes());
-        linkElements = linkElements.data(forceLayout.links());
-
-        var nodeContainers = nodeElements.enter() // for any new node data, add corresponding node elements
-          .append('g')
-            .attr('class', 'node')
-            .call(forceLayout.drag);
-
-        nodeContainers
-          .append('circle') // for each new node, add a circle element
-            .attr('r', function(d) { return countScale(d.count); }) // set node circle radius
-            .style('fill', function(d) { return colorScale(++colorIndex); }) // set node color
-            .attr('cx', 0)
-            .attr('cy', 0);
-
-        nodeContainers
-          .append('text') // for each new node, add a label
-          .text(function(d) { return ++nodeIndex + ' ' + d.event; });
-
-        linkElements.enter() // for any new link data, add corresponding link elements
-          .insert('line', ':first-child') // prepend links so that they are always behind nodes
-            .attr('class', 'link')
-            .style('stroke-width', function(d) { return countScale(d.count); }) // set link width based on count
-            .append('title')
-              .text(function(d) { return d.count; });
-
-        // (Re)start the layout - must happen any time node or link data changes
-        // https://github.com/mbostock/d3/wiki/Force-Layout#start
-        forceLayout.start();
-      }
-
-      // Takes a list, returns all subsets of that list (excluding the empty set - [])
-      // See http://stackoverflow.com/questions/5752002/find-all-possible-subset-combos-in-an-array
-      function getSubsets(input){
-        var allSubsets = [];
-        var addSubsets = function(n, input, subset) {
-          if (n) {
-            _.each(input, function(item, i) {
-              addSubsets(n - 1, input.slice(i + 1), subset.concat([item]));
+            d3.json('mockelasticdata.json', function(error, mockdata) {
+                if (error) return console.error(error);
+                console.log('mockdata',mockdata);
+                mapdata = mockdata;
+                draw(mockdata)
             });
-          } else if (subset.length) {
-            allSubsets.push(subset);
-          }
-        }
-        _.each(input, function(item, i) {
-          addSubsets(i, input, []);
-        });
-        allSubsets.push(input);
-        return allSubsets;
-      }
 
-      // Gets all sub-funnels from a list of events, always including the first and last event
-      // [A, B, C, D] =>
-      //   [ [A, D],
-      //   [A, B, D],
-      //   [A, C, D],
-      //   [A, B, C, D] ]
-      function getFunnels(events) {
-        if (events.length <= 2) { // No sub-funnels if there are 2 or less events
-          return [events];
-        }
+            function draw(data) {
+                // var localstoreWorldData = localStorage.getItem('worldmapData');
+                // if (localstoreWorldData && localstoreWorldData.length) {
+                //     localstoreWorldData = JSON.parse(localstoreWorldData);
+                //     console.log('localstoreWorldData',localstoreWorldData);
+                //     if (localstoreWorldData) {
+                //         processWorldD(localstoreWorldData, data);
+                //         //no need proceed further
+                //         return;
+                //     }
+                // }
+                d3.json('world.json', function(error, world) {
+                    if (error) return console.error(error);
+                    console.log('world',world);
+                    processWorldD(world, data);
+                    //localStorage.setItem('worldmapData', JSON.stringify(world));
+                });
+            }
+            function processWorldD(world, data) {
+                    for(var idx=0; idx < data.aggregations.world_map.buckets.length; idx++) {
+                        var cCode = data.aggregations.world_map.buckets[idx].key.toUpperCase();
+                        var doc_count = data.aggregations.world_map.buckets[idx].doc_count;
+                        for(var wdx=0; wdx < world.objects.subunits.geometries.length; wdx++) {
+                            var cName = world.objects.subunits.geometries[wdx].id.toUpperCase();
+                            if (cCode === cName) {
+                                world.objects.subunits.geometries[wdx].properties.doc_count = doc_count;
+                            }
+                        }
+                    }
+                    var subunits = topojson.feature(world, world.objects.subunits);
+                    subunits.features = subunits.features.filter(function(d){ return d.id !== "ATA"; });
+                    console.log('subunits',subunits);
+                    minDocCount = d3.min(subunits.features, function(d){ return d.properties.doc_count; });
+                    console.log('minDocCount',minDocCount);
+                    var doc_counts = subunits.features.map(function(d){ return d.properties.doc_count; });
+                    doc_counts = doc_counts.filter(function(d){ return d; }).sort(d3.ascending);
+                    //console.log('doc_counts',doc_counts);
+                    quantiles['0.95'] = d3.quantile(doc_counts, '0.95');
+                    var countries = svg.selectAll('path.subunit')
+                        .data(subunits.features).enter();
+                    countries.insert('path', '.graticule')
+                        .attr('class', function(d) { return 'subunit ca'+d.id; })
+                        .style('fill', heatColor)
+                        .attr('d', path)
+                        .on('mouseover',mouseoverLegend).on('mouseout',mouseoutLegend)
+                        .on('click', coutryclicked);
+                    
+                    countries.append('svg:text')
+                        .attr('class', function(d){ return 'subunit-label la'+d.id+d.properties.name.replace(/[ \.#']+/g,''); })
+                        //.attr('transform', function(d) { return 'translate('+ path.centroid(d) +')'; })
+                        .attr('transform', function(d) { return 'translate('+(width-(5*d.properties.name.length))+','+(15)+')'; })
+                        .attr('dy', '.35em')
+                        .attr('filter', 'url(#gray-background)')
+                        .append('svg:tspan')
+                        .attr('x', 0)
+                        .attr('dy', 5)
+                        .text(function(d) { return d.properties.name; })
+                        .append('svg:tspan')
+                        .attr('x', 0)
+                        .attr('dy', 20)
+                        .text(function(d) { return d.properties.doc_count ? d.properties.doc_count : ''; });
+            }
 
-        var first = events[0];
-        var last = events.slice(-1)[0];
-        var rest = events.slice(1, -1);
+            function mouseoverLegend(datum, index) {
+                d3.selectAll('.subunit-label.la'+datum.id+datum.properties.name.replace(/[ \.#']+/g,''))
+                    .style('display', 'inline-block');
+                d3.selectAll('.subunit.ca'+datum.id)
+                    .style('fill', '#cc6699');
+            }
 
-        var funnels = [[first, last]];
-        var subFunnels = getSubsets(rest)
+            function mouseoutLegend(datum, index) {
+                d3.selectAll('.subunit-label.la'+datum.id+datum.properties.name.replace(/[ \.#']+/g,''))
+                    .style('display', 'none');
+                d3.selectAll('.subunit.ca'+datum.id)
+                    .style('fill', heatColor(datum));
+            }
 
-        _.each(subFunnels, function(funnel) {
-          funnel = [first].concat(funnel).concat([last]);
-          funnels.push(funnel);
-        });
-
-        return funnels;
-      }
-    </script>
-  </body>
+            function coutryclicked(datum, index) {
+                //filter event for this country should be applied here
+                console.log('coutryclicked datum', datum);
+            }
+            function heatColor(d) {
+                if (quantiles['0.95'] === 0 && minDocCount === 0) return '#F0F0F0';
+                if (!d.properties.doc_count) return '#F0F0F0';
+                if (d.properties.doc_count > quantiles['0.95']) return palette[(palette.length - 1)];
+                if (quantiles['0.95'] == minDocCount) return palette[(palette.length-1)];
+                var diffDocCount = quantiles['0.95'] - minDocCount;
+                var paletteInterval = diffDocCount / palette.length;
+                var diffDocCountDatum = quantiles['0.95'] - d.properties.doc_count;
+                var diffDatumDiffDoc = diffDocCount - diffDocCountDatum;
+                var approxIdx = diffDatumDiffDoc / paletteInterval;
+                if (!approxIdx || Math.floor(approxIdx) === 0) approxIdx = 0;
+                else approxIdx = Math.floor(approxIdx) - 1;
+                return palette[approxIdx];
+            }
+        </script>
+        
+    </body>
 </html>
+mockelasticdata.json#
+
+{
+   "took": 492,
+   "timed_out": false,
+   "_shards": {
+      "total": 5,
+      "successful": 3,
+      "failed": 0
+   },
+   "hits": {
+      "total": 30111166,
+      "max_score": 0,
+      "hits": []
+   },
+   "aggregations": {
+      "world_map": {
+         "doc_count_error_upper_bound": 0,
+         "sum_other_doc_count": 0,
+         "buckets": [
+            {
+               "key": "USA",
+               "doc_count": 4231922
+            },
+            {
+               "key": "CAN",
+               "doc_count": 817866
+            },
+            {
+               "key": "GBR",
+               "doc_count": 213736
+            },
+            {
+               "key": "MOZ",
+               "doc_count": 76607
+            },
+            {
+               "key": "TUR",
+               "doc_count": 72724
+            },
+            {
+               "key": "KEN",
+               "doc_count": 64413
+            },
+            {
+               "key": "BEL",
+               "doc_count": 54416
+            },
+            {
+               "key": "FRA",
+               "doc_count": 50738
+            },
+            {
+               "key": "NLD",
+               "doc_count": 42092
+            },
+            {
+               "key": "ZAF",
+               "doc_count": 33714
+            },
+            {
+               "key": "AUS",
+               "doc_count": 29904
+            },
+            {
+               "key": "ARG",
+               "doc_count": 23539
+            },
+            {
+               "key": "SWE",
+               "doc_count": 23145
+            },
+            {
+               "key": "ESP",
+               "doc_count": 22365
+            },
+            {
+               "key": "HKG",
+               "doc_count": 14383
+            },
+            {
+               "key": "BRA",
+               "doc_count": 14097
+            },
+            {
+               "key": "COL",
+               "doc_count": 13908
+            },
+            {
+               "key": "DEU",
+               "doc_count": 5985
+            },
+            {
+               "key": "MEX",
+               "doc_count": 5396
+            },
+            {
+               "key": "TTO",
+               "doc_count": 5138
+            },
+            {
+               "key": "CHN",
+               "doc_count": 3478
+            },
+            {
+               "key": "CHL",
+               "doc_count": 3450
+            },
+            {
+               "key": "KAZ",
+               "doc_count": 2666
+            },
+            {
+               "key": "PER",
+               "doc_count": 2005
+            },
+            {
+               "key": "IRN",
+               "doc_count": 1586
+            },
+            {
+               "key": "BGR",
+               "doc_count": 1552
+            },
+            {
+               "key": "POL",
+               "doc_count": 1539
+            },
+            {
+               "key": "UKR",
+               "doc_count": 1444
+            },
+            {
+               "key": "SGP",
+               "doc_count": 1386
+            },
+            {
+               "key": "JPN",
+               "doc_count": 1371
+            },
+            {
+               "key": "CZE",
+               "doc_count": 1295
+            },
+            {
+               "key": "IND",
+               "doc_count": 1126
+            },
+            {
+               "key": "ITA",
+               "doc_count": 1077
+            },
+            {
+               "key": "JAM",
+               "doc_count": 1014
+            },
+            {
+               "key": "ROU",
+               "doc_count": 1011
+            },
+            {
+               "key": "RUS",
+               "doc_count": 980
+            },
+            {
+               "key": "EU",
+               "doc_count": 979
+            },
+            {
+               "key": "SRB",
+               "doc_count": 957
+            },
+            {
+               "key": "ECU",
+               "doc_count": 851
+            },
+            {
+               "key": "ISR",
+               "doc_count": 848
+            },
+            {
+               "key": "KOR",
+               "doc_count": 835
+            },
+            {
+               "key": "ARE",
+               "doc_count": 631
+            },
+            {
+               "key": "NCL",
+               "doc_count": 598
+            },
+            {
+               "key": "PRT",
+               "doc_count": 487
+            },
+            {
+               "key": "GRC",
+               "doc_count": 423
+            },
+            {
+               "key": "URY",
+               "doc_count": 416
+            },
+            {
+               "key": "BLR",
+               "doc_count": 392
+            },
+            {
+               "key": "HUN",
+               "doc_count": 368
+            },
+            {
+               "key": "HRV",
+               "doc_count": 355
+            },
+            {
+               "key": "GTM",
+               "doc_count": 312
+            },
+            {
+               "key": "BOL",
+               "doc_count": 308
+            },
+            {
+               "key": "THA",
+               "doc_count": 294
+            },
+            {
+               "key": "CHE",
+               "doc_count": 291
+            },
+            {
+               "key": "AUT",
+               "doc_count": 284
+            },
+            {
+               "key": "MDA",
+               "doc_count": 249
+            },
+            {
+               "key": "VNM",
+               "doc_count": 236
+            },
+            {
+               "key": "VEN",
+               "doc_count": 228
+            },
+            {
+               "key": "NGA",
+               "doc_count": 216
+            },
+            {
+               "key": "IRL",
+               "doc_count": 190
+            },
+            {
+               "key": "PSE",
+               "doc_count": 188
+            },
+            {
+               "key": "NOR",
+               "doc_count": 184
+            },
+            {
+               "key": "AFG",
+               "doc_count": 181
+            },
+            {
+               "key": "LVA",
+               "doc_count": 177
+            },
+            {
+               "key": "CRI",
+               "doc_count": 175
+            },
+            {
+               "key": "MAR",
+               "doc_count": 172
+            },
+            {
+               "key": "SEN",
+               "doc_count": 162
+            },
+            {
+               "key": "RWA",
+               "doc_count": 156
+            },
+            {
+               "key": "GEO",
+               "doc_count": 151
+            },
+            {
+               "key": "KGZ",
+               "doc_count": 149
+            },
+            {
+               "key": "BWA",
+               "doc_count": 146
+            },
+            {
+               "key": "PHL",
+               "doc_count": 144
+            },
+            {
+               "key": "SDN",
+               "doc_count": 137
+            },
+            {
+               "key": "GLP",
+               "doc_count": 98
+            },
+            {
+               "key": "DOM",
+               "doc_count": 93
+            },
+            {
+               "key": "ALB",
+               "doc_count": 90
+            },
+            {
+               "key": "MNE",
+               "doc_count": 88
+            },
+            {
+               "key": "ARM",
+               "doc_count": 83
+            },
+            {
+               "key": "DNK",
+               "doc_count": 80
+            },
+            {
+               "key": "UZB",
+               "doc_count": 69
+            },
+            {
+               "key": "NZL",
+               "doc_count": 56
+            },
+            {
+               "key": "LBN",
+               "doc_count": 52
+            },
+            {
+               "key": "TUN",
+               "doc_count": 28
+            },
+            {
+               "key": "GHA",
+               "doc_count": 27
+            },
+            {
+               "key": "ZWE",
+               "doc_count": 24
+            },
+            {
+               "key": "DZA",
+               "doc_count": 23
+            },
+            {
+               "key": "JEY",
+               "doc_count": 18
+            },
+            {
+               "key": "TWN",
+               "doc_count": 12
+            },
+            {
+               "key": "GRD",
+               "doc_count": 7
+            }
+         ]
+      }
+   }
+}
