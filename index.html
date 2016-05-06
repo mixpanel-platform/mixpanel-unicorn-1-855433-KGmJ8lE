@@ -44,7 +44,7 @@ function main() {
   }).groupBy(["properties.$country_code"], mixpanel.reducer.count())
   .map(function(user) {
     return {
-      "key": ios3[user.key[0]],
+      "key": ios3[user.key[0]] ? ios3[user.key[0]] : "Other",
       "doc_count": user.value,
       "ios": user.key[0]
     }
