@@ -200,7 +200,8 @@ function main() {
                 "/explore/#list/filter:(conjunction:and,filters:!((dropdown_tab_index:1,filter:(operand:" + 
                 country_id + 
                 ",operator:in),property:(name:'$country_code',no_second_icon:!t,source:user,type:string)" +
-                ",selected_property_type:string,type:string)))";
+                ",selected_property_type:string,type:string))),sort_order:descending,sort_property:'$last_seen'," +
+                "sort_property_type:datetime";
                 
                 window.open(mp_expore);
                 }
