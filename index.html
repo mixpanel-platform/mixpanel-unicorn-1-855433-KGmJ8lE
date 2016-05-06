@@ -45,7 +45,8 @@ function main() {
   .map(function(user) {
     return {
       "key": ios3[user.key[0]],
-      "doc_count": user.value
+      "doc_count": user.value,
+      "ios": user.key[0]
     }
   });
 }
