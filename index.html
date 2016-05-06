@@ -146,10 +146,12 @@ function main() {
                     for(var idx=0; idx < data.aggregations.world_map.buckets.length; idx++) {
                         var cCode = data.aggregations.world_map.buckets[idx].key.toUpperCase();
                         var doc_count = data.aggregations.world_map.buckets[idx].doc_count;
+                        var ios2 = data.aggregations.world_map.buckets[idx].ios;
                         for(var wdx=0; wdx < world.objects.subunits.geometries.length; wdx++) {
                             var cName = world.objects.subunits.geometries[wdx].id.toUpperCase();
                             if (cCode === cName) {
                                 world.objects.subunits.geometries[wdx].properties.doc_count = doc_count;
+                                world.objects.subunits.geometries[wdx].properties.ios = ios2;
                             }
                         }
                     }
@@ -169,8 +171,7 @@ function main() {
                         .style('fill', heatColor)
                         .attr('d', path)
                         .on('mouseover',mouseoverLegend).on('mouseout',mouseoutLegend)
-                        .on('click', coutryclicked)
-                        .on('click', send_to_explore("US"));
+                        .on('click', coutryclicked);
                     
                     countries.append('svg:text')
                         .attr('class', function(d){ return 'subunit-label la'+d.id+d.properties.name.replace(/[ \.#']+/g,''); })
