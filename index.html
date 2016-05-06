@@ -117,12 +117,15 @@ function main() {
             }
             
             function send_to_explore(country_id) {
+              if(country_id){
                 var mp_expore = mp_report_url + 
                 "/explore/#list/filter:(conjunction:and,filters:!((dropdown_tab_index:1,filter:(operand:" + 
                 country_id + 
                 ",operator:in),property:(name:'$country_code',no_second_icon:!t,source:user,type:string)" +
                 ",selected_property_type:string,type:string)))";
+                
                 window.open(mp_expore);
+                }
             }
             
             var script = $('#cq').html();
