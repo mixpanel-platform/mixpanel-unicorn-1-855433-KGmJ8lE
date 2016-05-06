@@ -170,7 +170,7 @@ function main() {
                         .attr('d', path)
                         .on('mouseover',mouseoverLegend).on('mouseout',mouseoutLegend)
                         .on('click', coutryclicked)
-                        .on('click', send_to_explore(data.aggregations.world_map.buckets[idx].ios));
+                        .on('click', send_to_explore("US"));
                     
                     countries.append('svg:text')
                         .attr('class', function(d){ return 'subunit-label la'+d.id+d.properties.name.replace(/[ \.#']+/g,''); })
