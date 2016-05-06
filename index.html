@@ -116,18 +116,6 @@ function main() {
               }
             }
             
-            function send_to_explore(country_id) {
-              if(country_id){
-                var mp_expore = mp_report_url + 
-                "/explore/#list/filter:(conjunction:and,filters:!((dropdown_tab_index:1,filter:(operand:" + 
-                country_id + 
-                ",operator:in),property:(name:'$country_code',no_second_icon:!t,source:user,type:string)" +
-                ",selected_property_type:string,type:string)))";
-                
-                window.open(mp_expore);
-                }
-            }
-            
             var script = $('#cq').html();
             script = $.trim(script);
             MP.api.jql(script).done(function(results) {
@@ -205,10 +193,25 @@ function main() {
                 d3.selectAll('.subunit.ca'+datum.id)
                     .style('fill', heatColor(datum));
             }
+            
+            function send_to_explore(country_id) {
+              if(country_id){
+                var mp_expore = mp_report_url + 
+                "/explore/#list/filter:(conjunction:and,filters:!((dropdown_tab_index:1,filter:(operand:" + 
+                country_id + 
+                ",operator:in),property:(name:'$country_code',no_second_icon:!t,source:user,type:string)" +
+                ",selected_property_type:string,type:string)))";
+                
+                window.open(mp_expore);
+                }
+            }
 
             function coutryclicked(datum, index) {
                 //filter event for this country should be applied here
                 console.log('coutryclicked datum', datum);
+                if(datum.properties.ios){
+                  send_to_explore(datum.properties.ios);
+                }
             }
             function heatColor(d) {
                 if (quantiles['0.95'] === 0 && minDocCount === 0) return '#F0F0F0';
